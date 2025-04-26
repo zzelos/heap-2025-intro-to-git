@@ -1,0 +1,64 @@
+name: autograder
+on:
+  push:
+    branches: [main]
+jobs:
+  check-git-actions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get Initial Commit SHA
+        id: get-initial-commit
+        run: |
+          INITIAL_COMMIT=$(git rev-list --max-parents=0 HEAD)
+          echo "INITIAL_COMMIT=$INITIAL_COMMIT" >> $GITHUB_ENV
+      - name: Check for Branch Creation
+        id: check-branch
+        run: |
+          branches=$(git branch -r | grep -v "origin/main" | grep -v "HEAD" | sed 's/origin\///g')
+          branches=$(echo "$branches" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [ -n "$branches" ]; then
+            echo "BRANCH_CREATED=true" >> $GITHUB_ENV
+            echo "Found branches: $branches"
+          else
+            echo "BRANCH_CREATED=false" >> $GITHUB_ENV
+            echo "No branches found other than main."
+          fi
+      - name: Check for Commits
+        id: check-commits
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD ^"$INITIAL_COMMIT")
+          if [ "$COMMIT_COUNT" -gt 0 ]; then
+            echo "COMMITS_PRESENT=true" >> $GITHUB_ENV
+            echo "Found $COMMIT_COUNT commit(s) after the initial commit."
+          else
+            echo "COMMITS_PRESENT=false" >> $GITHUB_ENV
+            echo "No commits found after the initial commit."
+          fi
+      - name: Check for Merge Commit
+        id: check-merge
+        run: |
+          merge_commit=$(git log --pretty=format:"%H" --merges | tail -1)
+          if [ -n "$merge_commit" ]; then
+            echo "MERGE_PRESENT=true" >> $GITHUB_ENV
+            echo "Found merge commit: $merge_commit"
+          else
+            echo "MERGE_PRESENT=false" >> $GITHUB_ENV
+            echo "No merge commit found."
+          fi
+      - name: Summarize Git Actions
+        run: |
+          echo "Git Actions Summary:"
+          echo "Branch Created: $BRANCH_CREATED"
+          echo "Commits Present: $COMMITS_PRESENT"
+          echo "Merge Present: $MERGE_PRESENT"
+      - name: Check if lab criteria is met
+        if: env.BRANCH_CREATED != 'true' || env.COMMITS_PRESENT != 'true' || env.MERGE_PRESENT != 'true'
+        run: |
+          echo "Error: Required Git actions not found in the commit history."
+          echo "  You should have created a branch, made commits, and performed a merge."
+          echo "  Check the previous steps for details."
+          exit 1
